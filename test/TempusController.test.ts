@@ -191,7 +191,20 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
 
       await controller.depositYieldBearing(user2, pool, 10000, user2);
       await testPool.amm.provideLiquidity(user2, 1000, 10000, TempusAMMJoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT);
-      await controller.exitTempusAMMAndRedeem(testPool, user2, 9999, false);
+      
+      const userP:number = +await testPool.tempus.principalShare.balanceOf(user2);
+      const userY:number = +await testPool.tempus.yieldShare.balanceOf(user2);
+      const userPRedeem:number = userP < 9999 ? userP : 9999;
+      const userYRedeem:number = userY < 9999 ? userY : 9999;
+      await controller.exitTempusAMMAndRedeem(
+        testPool, 
+        user2, 
+        userPRedeem,
+        userYRedeem,
+        9999 - userPRedeem, 
+        9999 - userYRedeem,
+        false
+      );
       expect(await pool.yieldShare.balanceOf(user2)).to.equal(0);
       expect(await pool.principalShare.balanceOf(user2)).to.equal(0);
       expect(+await amm.balanceOf(user2)).to.be.within(0.991, 0.993);
@@ -203,7 +216,19 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
       await initAMM(user1, /*ybtDeposit*/1000000, /*principals*/100000, /*yields*/1000000);
       await controller.depositYieldBearing(user2, pool, 10000, user2);
       await testPool.amm.provideLiquidity(user2, 1000, 10000, TempusAMMJoinKind.EXACT_TOKENS_IN_FOR_BPT_OUT);
-      const reedemAction = controller.exitTempusAMMAndRedeem(testPool, user2, 9999, true);
+      const userP:number = +await testPool.tempus.principalShare.balanceOf(user2);
+      const userY:number = +await testPool.tempus.yieldShare.balanceOf(user2);
+      const userPRedeem:number = userP < 9999 ? userP : 9999;
+      const userYRedeem:number = userY < 9999 ? userY : 9999;
+      const reedemAction = controller.exitTempusAMMAndRedeem(
+        testPool, 
+        user2, 
+        userPRedeem,
+        userYRedeem,
+        9999 - userPRedeem,
+        9999 - userYRedeem, 
+        true
+      );
       if (testPool.type === PoolType.Lido) {
         (await expectRevert(reedemAction)).to.equal("LidoTempusPool.withdrawFromUnderlyingProtocol not supported");
       }
@@ -221,7 +246,15 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
       await initAMM(user1, /*ybtDeposit*/1000000, /*principals*/100000, /*yields*/1000000);
       await testPool.fastForwardToMaturity();
 
-      (await expectRevert(controller.exitTempusAMMAndRedeem(testPool, user2, 100000, false))).to.equal(
+      (await expectRevert(controller.exitTempusAMMAndRedeem(
+        testPool, 
+        user2, 
+        100000, 
+        100000,
+        0,
+        0,
+        false
+      ))).to.equal(
         "Pool already finalized"
       );
     });
@@ -238,8 +271,22 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
       await testPool.controller.depositAndProvideLiquidity(testPool, user2, 10000, false);
       await testPool.controller.depositAndFix(testPool, owner, 100, false, 0);
 
-      await controller.completeExitAndRedeem(testPool, user2, false);
-      await controller.completeExitAndRedeem(testPool, owner, false);
+      await controller.exitTempusAmmAndRedeem(
+        testPool, 
+        user2, 
+        await testPool.amm.balanceOf(user2), 
+        await testPool.tempus.principalShare.balanceOf(user2),
+        await testPool.tempus.yieldShare.balanceOf(user2), 
+        false
+      );
+      await controller.exitTempusAmmAndRedeem(
+        testPool, 
+        owner, 
+        await testPool.amm.balanceOf(owner), 
+        await testPool.tempus.principalShare.balanceOf(owner),
+        await testPool.tempus.yieldShare.balanceOf(owner), 
+        false
+      );
 
       const postBalanceUser2 = +await testPool.yieldTokenBalance(user2);
       const postBalanceOwner = +await testPool.yieldTokenBalance(owner);
@@ -263,7 +310,14 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
 
       expect(await testPool.yieldTokenBalance(user1)).to.equal(0);
 
-      await controller.completeExitAndRedeem(testPool, user1, false);
+      await controller.exitTempusAmmAndRedeem(
+        testPool, 
+        user1, 
+        await testPool.amm.balanceOf(user1), 
+        await testPool.tempus.principalShare.balanceOf(user1),
+        await testPool.tempus.yieldShare.balanceOf(user1),
+        false
+      );
 
       expect(await testPool.tempus.yieldShare.balanceOf(user1)).to.equal(0);
       expect(await testPool.tempus.principalShare.balanceOf(user1)).to.equal(0);
@@ -291,14 +345,28 @@ describeForEachPool("TempusController", (testPool:ITestPool) =>
 
       if (testPool.type == PoolType.Lido)
       {
-        (await expectRevert(controller.completeExitAndRedeem(testPool, user1, true))).to.equal(
+        (await expectRevert(controller.exitTempusAmmAndRedeem(
+          testPool, 
+          user1, 
+          await testPool.amm.balanceOf(user1), 
+          await testPool.tempus.principalShare.balanceOf(user1),
+          await testPool.tempus.yieldShare.balanceOf(user1),
+          true
+        ))).to.equal(
           "LidoTempusPool.withdrawFromUnderlyingProtocol not supported"
         );
       }
       else
       {
         expect(await testPool.backingTokenBalance(user1)).to.equal(100000);
-        await controller.completeExitAndRedeem(testPool, user1, true);
+        await controller.exitTempusAmmAndRedeem(
+          testPool, 
+          user1, 
+          await testPool.amm.balanceOf(user1), 
+          await testPool.tempus.principalShare.balanceOf(user1),
+          await testPool.tempus.yieldShare.balanceOf(user1),
+          true
+        );
         expect(await pool.yieldShare.balanceOf(user1)).to.equal(0);
         expect(await pool.principalShare.balanceOf(user1)).to.equal(0);
         expect(await testPool.amm.contract.balanceOf(user1.address)).to.equal(0);

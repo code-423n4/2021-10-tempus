@@ -199,14 +199,30 @@ contract TempusController is PermanentlyOwnable, ReentrancyGuard {
     /// @notice Can fail if there is not enough user balance
     /// @notice Only available before maturity since exiting AMM with exact amounts is disallowed after maturity
     /// @param tempusAMM TempusAMM instance to withdraw liquidity from
-    /// @param sharesAmount Amount of Principals and Yields
+    /// @param principals Amount of Principals to redeem
+    /// @param yields Amount of Yields to redeem
+    /// @param principalsStaked Amount of staked principals (in TempusAMM) to redeem
+    /// @param yieldsStaked Amount of staked yields (in TempusAMM) to redeem
+    /// @param maxLpTokensToRedeem Maximum amount of LP tokens to spend for staked shares redemption
     /// @param toBackingToken If true redeems to backing token, otherwise redeems to yield bearing
     function exitTempusAMMAndRedeem(
         ITempusAMM tempusAMM,
-        uint256 sharesAmount,
+        uint256 principals,
+        uint256 yields,
+        uint256 principalsStaked,
+        uint256 yieldsStaked,
+        uint256 maxLpTokensToRedeem,
         bool toBackingToken
     ) external nonReentrant {
-        _exitTempusAMMAndRedeem(tempusAMM, sharesAmount, toBackingToken);
+        _exitTempusAMMAndRedeem(
+            tempusAMM,
+            principals,
+            yields,
+            principalsStaked,
+            yieldsStaked,
+            maxLpTokensToRedeem,
+            toBackingToken
+        );
     }
 
     /// @dev Withdraws ALL liquidity from TempusAMM and redeems Shares to Yield Bearing or Backing Tokens
@@ -214,14 +230,32 @@ contract TempusController is PermanentlyOwnable, ReentrancyGuard {
     /// @notice `msg.sender` needs to approve controller for whole balance of LP token
     /// @notice Can fail if there is not enough user balance
     /// @param tempusAMM TempusAMM instance to withdraw liquidity from
+    /// @param lpTokens Number of Lp tokens to redeem
+    /// @param principals Number of Principals to redeem
+    /// @param yields Number of Yields to redeem
+    /// @param minPrincipalsStaked Minimum amount of staked principals to redeem for `lpTokens`
+    /// @param minYieldsStaked Minimum amount of staked yields to redeem for `lpTokens`
     /// @param maxLeftoverShares Maximum amount of Principals or Yields to be left in case of early exit
     /// @param toBackingToken If true redeems to backing token, otherwise redeems to yield bearing
-    function completeExitAndRedeem(
+    function exitTempusAmmAndRedeem(
         ITempusAMM tempusAMM,
+        uint256 lpTokens,
+        uint256 principals,
+        uint256 yields,
+        uint256 minPrincipalsStaked,
+        uint256 minYieldsStaked,
         uint256 maxLeftoverShares,
         bool toBackingToken
     ) external nonReentrant {
-        _completeExitAndRedeem(tempusAMM, maxLeftoverShares, toBackingToken);
+        _exitTempusAmmAndRedeem(
+            tempusAMM,
+            lpTokens,
+            principals,
+            yields,
+            getAMMOrderedAmounts(tempusAMM.tempusPool(), minPrincipalsStaked, minYieldsStaked),
+            maxLeftoverShares,
+            toBackingToken
+        );
     }
 
     /// Finalize the pool after maturity.
@@ -245,6 +279,7 @@ contract TempusController is PermanentlyOwnable, ReentrancyGuard {
         uint256 minReturn
     ) private {
         require(swapAmount > 0, "Invalid swap amount.");
+        tokenIn.safeIncreaseAllowance(address(tempusAMM.getVault()), swapAmount);
 
         (IVault vault, bytes32 poolId, , ) = _getAMMDetailsAndEnsureInitialized(tempusAMM);
 
@@ -548,37 +583,42 @@ contract TempusController is PermanentlyOwnable, ReentrancyGuard {
 
     function _exitTempusAMMAndRedeem(
         ITempusAMM tempusAMM,
-        uint256 sharesAmount,
+        uint256 principals,
+        uint256 yields,
+        uint256 principalsStaked,
+        uint256 yieldsStaked,
+        uint256 maxLpTokensToRedeem,
         bool toBackingToken
     ) private {
         ITempusPool tempusPool = tempusAMM.tempusPool();
         require(!tempusPool.matured(), "Pool already finalized");
-        uint256 userPrincipalBalance = IERC20(address(tempusPool.principalShare())).balanceOf(msg.sender);
-        uint256 userYieldBalance = IERC20(address(tempusPool.yieldShare())).balanceOf(msg.sender);
-
-        uint256 ammExitAmountPrincipal = sharesAmount - userPrincipalBalance;
-        uint256 ammExitAmountYield = sharesAmount - userYieldBalance;
+        principals += principalsStaked;
+        yields += yieldsStaked;
+        require(principals == yields, "Needs equal amounts of shares before maturity");
 
         // transfer LP tokens to controller
-        uint256 userBalanceLP = tempusAMM.balanceOf(msg.sender);
-        require(tempusAMM.transferFrom(msg.sender, address(this), userBalanceLP), "LP token transfer failed");
+        require(tempusAMM.transferFrom(msg.sender, address(this), maxLpTokensToRedeem), "LP token transfer failed");
 
-        uint256[] memory amounts = getAMMOrderedAmounts(tempusPool, ammExitAmountPrincipal, ammExitAmountYield);
-        _exitTempusAMMGivenAmountsOut(tempusAMM, address(this), msg.sender, amounts, userBalanceLP, false);
+        uint256[] memory amounts = getAMMOrderedAmounts(tempusPool, principalsStaked, yieldsStaked);
+        _exitTempusAMMGivenAmountsOut(tempusAMM, address(this), msg.sender, amounts, maxLpTokensToRedeem, false);
 
         // transfer remainder of LP tokens back to user
         uint256 lpTokenBalance = tempusAMM.balanceOf(address(this));
         require(tempusAMM.transferFrom(address(this), msg.sender, lpTokenBalance), "LP token transfer failed");
 
         if (toBackingToken) {
-            _redeemToBacking(tempusPool, msg.sender, sharesAmount, sharesAmount, msg.sender);
+            _redeemToBacking(tempusPool, msg.sender, principals, yields, msg.sender);
         } else {
-            _redeemToYieldBearing(tempusPool, msg.sender, sharesAmount, sharesAmount, msg.sender);
+            _redeemToYieldBearing(tempusPool, msg.sender, principals, yields, msg.sender);
         }
     }
 
-    function _completeExitAndRedeem(
+    function _exitTempusAmmAndRedeem(
         ITempusAMM tempusAMM,
+        uint256 lpTokens,
+        uint256 principals,
+        uint256 yields,
+        uint256[] memory minLpAmountsOut,
         uint256 maxLeftoverShares,
         bool toBackingToken
     ) private {
@@ -586,37 +626,36 @@ contract TempusController is PermanentlyOwnable, ReentrancyGuard {
 
         IERC20 principalShare = IERC20(address(tempusPool.principalShare()));
         IERC20 yieldShare = IERC20(address(tempusPool.yieldShare()));
-        // send all shares to controller
-        principalShare.safeTransferFrom(msg.sender, address(this), principalShare.balanceOf(msg.sender));
-        yieldShare.safeTransferFrom(msg.sender, address(this), yieldShare.balanceOf(msg.sender));
+        require(principalShare.transferFrom(msg.sender, address(this), principals), "Principals transfer failed");
+        require(yieldShare.transferFrom(msg.sender, address(this), yields), "Yields transfer failed");
 
-        uint256 userBalanceLP = tempusAMM.balanceOf(msg.sender);
-
-        if (userBalanceLP > 0) {
+        if (lpTokens > 0) {
             // if there is LP balance, transfer to controller
-            require(tempusAMM.transferFrom(msg.sender, address(this), userBalanceLP), "LP token transfer failed");
-
-            uint256[] memory minAmountsOut = new uint256[](2);
+            require(tempusAMM.transferFrom(msg.sender, address(this), lpTokens), "LP token transfer failed");
 
             // exit amm and sent shares to controller
-            _exitTempusAMMGivenLP(tempusAMM, address(this), address(this), userBalanceLP, minAmountsOut, false);
+            _exitTempusAMMGivenLP(tempusAMM, address(this), address(this), lpTokens, minLpAmountsOut, false);
         }
 
-        uint256 principals = principalShare.balanceOf(address(this));
-        uint256 yields = yieldShare.balanceOf(address(this));
+        principals = principalShare.balanceOf(address(this));
+        yields = yieldShare.balanceOf(address(this));
 
         if (!tempusPool.matured()) {
             bool yieldsIn = yields > principals;
             uint256 difference = yieldsIn ? (yields - principals) : (principals - yields);
 
             if (difference >= maxLeftoverShares) {
-                uint amountIn = tempusAMM.getSwapAmountToEndWithEqualShares(principals, yields, maxLeftoverShares);
                 (IERC20 tokenIn, IERC20 tokenOut) = yieldsIn
                     ? (yieldShare, principalShare)
                     : (principalShare, yieldShare);
-                tokenIn.safeIncreaseAllowance(address(tempusAMM.getVault()), amountIn);
 
-                swap(tempusAMM, amountIn, tokenIn, tokenOut, 0);
+                swap(
+                    tempusAMM,
+                    tempusAMM.getSwapAmountToEndWithEqualShares(principals, yields, maxLeftoverShares),
+                    tokenIn,
+                    tokenOut,
+                    0
+                );
 
                 principals = principalShare.balanceOf(address(this));
                 yields = yieldShare.balanceOf(address(this));

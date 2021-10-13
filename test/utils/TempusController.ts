@@ -159,14 +159,25 @@ export class TempusController extends ContractBase {
   async exitTempusAMMAndRedeem(
     pool: ITestPool,
     user: SignerOrAddress,
-    sharesAmount: Number,
+    principals: NumberOrString,
+    yields: NumberOrString,
+    principalsLp: NumberOrString,
+    yieldsLp: NumberOrString,
     toBackingToken: boolean
   ): Promise<Transaction> {
     const amm = pool.amm, t = pool.tempus;
     await amm.contract.connect(user).approve(this.address, amm.contract.balanceOf(addressOf(user)));
-    await t.principalShare.approve(user, t.address, sharesAmount);
-    await t.yieldShare.approve(user, t.address, sharesAmount);
-    return this.connect(user).exitTempusAMMAndRedeem(amm.address, t.principalShare.toBigNum(sharesAmount), toBackingToken);
+    await t.principalShare.approve(user, t.address, principals);
+    await t.yieldShare.approve(user, t.address, yields);
+    return this.connect(user).exitTempusAMMAndRedeem(
+      amm.address,
+      t.principalShare.toBigNum(principals),
+      t.yieldShare.toBigNum(yields),
+      t.principalShare.toBigNum(principalsLp),
+      t.yieldShare.toBigNum(yieldsLp),
+      amm.contract.balanceOf(addressOf(user)),
+      toBackingToken
+    );
   }
 
   async exitTempusAmm(
@@ -179,7 +190,14 @@ export class TempusController extends ContractBase {
     return this.connect(user).exitTempusAMM(amm.address, pool.amm.toBigNum(lpTokensAmount), 1, 1, false);
   }
 
-  async completeExitAndRedeem(pool:ITestPool, user: SignerOrAddress, toBacking: boolean): Promise<Transaction> {
+  async exitTempusAmmAndRedeem(
+    pool:ITestPool, 
+    user: SignerOrAddress, 
+    lpTokens:NumberOrString, 
+    principals:NumberOrString, 
+    yields:NumberOrString, 
+    toBacking: boolean
+  ): Promise<Transaction> {
     const amm = pool.amm, t = pool.tempus, addr = addressOf(user);
     await amm.connect(user).approve(this.address, amm.contract.balanceOf(addr));
     await t.principalShare.connect(user).approve(this.address, t.principalShare.contract.balanceOf(addr));
@@ -195,7 +213,16 @@ export class TempusController extends ContractBase {
       throw new Error("Cannot determine maxLeftoverShares for principal decimals="+t.principalShare.decimals);
     }
 
-    return this.connect(user).completeExitAndRedeem(amm.address, maxLeftoverShares, toBacking);
+    return this.connect(user).exitTempusAmmAndRedeem(
+      amm.address,
+      amm.toBigNum(lpTokens),
+      amm.principalShare.toBigNum(principals),
+      amm.yieldShare.toBigNum(yields),
+      0,
+      0,
+      maxLeftoverShares,
+      toBacking
+    );
   }
 
   /**
