@@ -85,9 +85,9 @@ To compile run `yarn build`
 To run the unit tests `yarn test`  
 
 ## Learn more about Tempus
-[Website](tempus.finance)
-[Medium](medium.tempus.finance)
-[Discord](discord.tempus.finance)
-[Twitter](twitter.tempus.finance)
-[GitHub](github.tempus.finance)
-[Docs](docs.tempus.finance)
+[Website](http://tempus.finance)
+[Medium](http://medium.tempus.finance)
+[Discord](http://discord.tempus.finance)
+[Twitter](http://twitter.tempus.finance)
+[GitHub](http://github.tempus.finance)
+[Docs](http://docs.tempus.finance)
