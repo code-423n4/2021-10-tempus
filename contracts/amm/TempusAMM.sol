@@ -205,6 +205,41 @@ contract TempusAMM is BaseGeneralPool, BaseMinimalSwapInfoPool, StableMath, IRat
         }
     }
 
+    // NOTE: Return value in AMM decimals precision (1e18)
+    function getExpectedBPTInGivenTokensOut(uint256 principalsStaked, uint256 yieldsStaked)
+        external
+        view
+        returns (uint256 lpTokens)
+    {
+        (IERC20[] memory ammTokens, uint256[] memory balances, ) = getVault().getPoolTokens(getPoolId());
+        uint256[] memory amountsOut = new uint256[](2);
+        (amountsOut[0], amountsOut[1]) = (address(ammTokens[0]) == address(tempusPool.principalShare()))
+            ? (principalsStaked, yieldsStaked)
+            : (yieldsStaked, principalsStaked);
+
+        uint256[] memory scalingFactors = _scalingFactors();
+        _upscaleArray(amountsOut, scalingFactors);
+        _upscaleArray(balances, scalingFactors);
+        uint256[] memory tokenRates = _getTokenRatesStored();
+        amountsOut.mul(tokenRates, _TEMPUS_SHARE_PRECISION);
+        balances.mul(tokenRates, _TEMPUS_SHARE_PRECISION);
+
+        uint256 protocolSwapFeePercentage = getSwapFeePercentage();
+        if (_isNotPaused()) {
+            // Update current balances by subtracting the protocol fee amounts
+            balances.sub(_getDueProtocolFeeAmounts(balances, protocolSwapFeePercentage));
+        }
+
+        (uint256 currentAmp, ) = _getAmplificationParameter();
+        lpTokens = StableMath._calcBptInGivenExactTokensOut(
+            currentAmp,
+            balances,
+            amountsOut,
+            totalSupply(),
+            protocolSwapFeePercentage
+        );
+    }
+
     function getExpectedTokensOutGivenBPTIn(uint256 bptAmountIn)
         external
         view

@@ -54,6 +54,15 @@ interface ITempusAMM {
         view
         returns (uint256 principals, uint256 yields);
 
+    /// @dev queries exiting TempusAMM with exact tokens out
+    /// @param principalsStaked amount of Principals to withdraw
+    /// @param yieldsStaked amount of Yields to withdraw
+    /// @return lpTokens Amount of Lp tokens that user would redeem
+    function getExpectedBPTInGivenTokensOut(uint256 principalsStaked, uint256 yieldsStaked)
+        external
+        view
+        returns (uint256 lpTokens);
+
     /// @dev queries joining TempusAMM with exact tokens in
     /// @param amountsIn amount of tokens to be added to the pool
     /// @return amount of LP tokens that could be recieved

@@ -4,7 +4,7 @@ import { fromWei, NumberOrString } from "../utils/Decimal";
 import { Signer } from "../utils/ContractBase";
 import { PoolType, TempusPool } from "../utils/TempusPool";
 import { evmMine, evmSetAutomine, expectRevert, increaseTime } from "../utils/Utils";
-import { TempusAMM, TempusAMMJoinKind } from "../utils/TempusAMM";
+import { TempusAMM, TempusAMMExitKind, TempusAMMJoinKind } from "../utils/TempusAMM";
 import { describeForEachPool } from "../pool-utils/MultiPoolTestSuite";
 import { ITestPool } from "../pool-utils/ITestPool";
 import exp = require("constants");
@@ -148,7 +148,7 @@ describeForEachPool("TempusAMM", (testFixture:ITestPool) =>
   it("[getExpectedLPTokensForTokensIn] verifies the expected amount is equivilant to actual join to TempusAMM", async () => {
     await createPools({yieldEst:0.1, duration:ONE_MONTH, amplifyStart:5, ammBalancePrincipal: 10000, ammBalanceYield: 100000});
     await testFixture.setTimeRelativeToPoolStart(0.5);
-    const expectedReturn = await testFixture.amm.getExpectedLPTokensForTokensIn(10, 100);
+    const expectedReturn = +await testFixture.amm.getExpectedLPTokensForTokensIn(10, 100);
     await createPools({yieldEst:0.1, duration:ONE_MONTH, amplifyStart:5, ammBalancePrincipal: 10000, ammBalanceYield: 100000});
     await testFixture.setNextBlockTimestampRelativeToPoolStart(0.5);
 
@@ -164,7 +164,21 @@ describeForEachPool("TempusAMM", (testFixture:ITestPool) =>
     } finally {
       await evmSetAutomine(true);
     }
-    
+  });
+
+  it("[getExpectedBPTInGivenTokensOut] verifies predicted exit amount matches actual exit amount", async () =>
+  {
+    await createPools({yieldEst:0.1, duration:ONE_MONTH, amplifyStart:5, ammBalancePrincipal: 10000, ammBalanceYield: 100000});
+    await testFixture.setTimeRelativeToPoolStart(0.5);
+
+    const LpBefore = +await testFixture.amm.balanceOf(owner);
+    const LpExpectedExit = +await testFixture.amm.getExpectedBPTInGivenTokensOut(10, 100);
+    const LpExpected = LpBefore - LpExpectedExit;
+
+    await testFixture.amm.exitPoolExactAmountOut(owner, [10, 100], /*maxAmountLpIn*/1000);
+    const LpAfter = +await testFixture.amm.balanceOf(owner);
+
+    expect(LpAfter).to.be.within(0.999999 * LpExpected, 1.0000001 * LpExpected);
   });
 
   it("checks amplification and invariant in multiple stages", async () =>

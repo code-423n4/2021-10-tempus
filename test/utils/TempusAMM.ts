@@ -104,7 +104,7 @@ export class TempusAMM extends ContractBase {
     return {principals: +this.principalShare.fromBigNum(p.principals), yields: +this.yieldShare.fromBigNum(p.yields)};
   }
 
-  async getExpectedLPTokensForTokensIn(principalsIn:NumberOrString, yieldsIn:NumberOrString): Promise<number> {
+  async getExpectedLPTokensForTokensIn(principalsIn:NumberOrString, yieldsIn:NumberOrString): Promise<NumberOrString> {
     const assets = [
       { address: this.principalShare.address, amount: this.principalShare.toBigNum(principalsIn) },
       { address: this.yieldShare.address, amount: this.yieldShare.toBigNum(yieldsIn) }
@@ -112,6 +112,19 @@ export class TempusAMM extends ContractBase {
     const amountsIn = assets.map(({ amount }) => amount);
 
     return +this.fromBigNum(await this.contract.getExpectedLPTokensForTokensIn(amountsIn));
+  }
+
+  /**
+   * @dev queries exiting TempusAMM with exact tokens out
+   * @param principalsStaked amount of Principals to withdraw
+   * @param yieldsStaked amount of Yields to withdraw
+   * @return lpTokens Amount of Lp tokens that user would redeem
+   */
+  async getExpectedBPTInGivenTokensOut(principalsStaked:NumberOrString, yieldsStaked:NumberOrString): Promise<NumberOrString> {
+    return this.fromBigNum(await this.contract.getExpectedBPTInGivenTokensOut(
+      this.principalShare.toBigNum(principalsStaked),
+      this.yieldShare.toBigNum(yieldsStaked)
+    ));
   }
 
   async provideLiquidity(from: SignerWithAddress, principalShareBalance: Number, yieldShareBalance: Number, joinKind: TempusAMMJoinKind) {
