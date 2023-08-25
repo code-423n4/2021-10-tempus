@@ -7,8 +7,6 @@
 - Starts October 14, 2021 00:00 UTC
 - Ends October 20, 2021 23:59 UTC
 
-This repo will be made public before the start of the contest. (C4 delete this line when made public)
-
 | Glossary| |
 |-------------------------------|------------------------------------------------------|
 | Backing Token | Any token that can be deposited to earn some interest via lending or staking. Currently we support ETH, DAI, and USDC. |
